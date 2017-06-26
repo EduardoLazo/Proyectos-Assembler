@@ -1,0 +1,902 @@
+*******************TRIPLE TOWN*********************************************
+***************************************************************************
+* definiciones de caracteres ASCII (LAS DEFINICIONES DE CARACTERES)
+EOT			EQU		$04		;FINAL DEL TEXTO
+CR      	EQU     $0d     ;ASCII RETORNO
+ESC			EQU		$1B		;ESCape
+
+* rutinas de BUFFALO
+OUTA    	EQU     $FFB8   ;BUFFALO RETORNO to output acc A
+OUTCRLF		EQU		$FFC4	;output CR-LF (carriage return and line feed)
+OUTSTRG		EQU		$FFC7	;CADENA output RETORNO.
+INCHAR		EQU		$FFCD	;char input RETORNO.
+OUTSTRG0	EQU		$FFCA	;ditto w/o leading CR
+
+* Constantes de direcciones de programa
+VARS		EQU	$100; donde se localizan las variables
+CODE		EQU	$2000; donde se localiza el codigo
+
+* Constantes
+N			EQU		6 ;Tamaño del tablero( es una matriz de 6*6)
+TRUE		EQU		1 ;bandera CUANDO ES VERDAD ES 1
+FALSE		EQU		0 ; CUANDO ES FALSO ES 0
+CELDA_VACIA EQU 	0 ;Constante para una celda vacia
+
+
+* las variables que van a ser locales
+	ORG	VARS
+mat			RMB		36			;mapa de juego
+visto 		RMB 	36 			;matriz de vistos
+elemento 	RMB 	1 			;Tipo de elemeto a ingresar
+cont 		RMB 	1 			;contar numero de elementos conectados
+fin 		RMB 	1 		 	;fin de juego
+
+pos 		RMB 	1 			;posicion 
+salir 		RMB 	1 			;bandera para salir del juego
+d1 			RMB 	1			;Digito 1 de posicion (1,)
+d2 			RMB 	1 			;Digito 2 de posicion (,1)
+
+; PARA CARGAR ELEMENTOS ALEATORIOS 
+s1	fdb 1
+s2	fdb 1
+s3	fdb 1
+r	fdb 0
+
+******************************************************************
+* Mensajes de salida
+Megs1 		 FCB 	"Su objeto es: ",EOT
+Megs2 		 FCB 	"Donde lo desea colocar?: ",EOT
+Msg_pos		 FCB	"La posicion que usted ingreso es: ",EOT
+MegsOCUPADO  FCB 	"Posicion ocupada, vuelva a ingresar posicion: ",EOT
+MegsGAMEOVER FCB 	"GAME OVER :(",EOT
+MegsPsFuRngo FCB 	"Posicion fuera de rango, vuelva a ingresar posicion: ",EOT
+MegInvalida  FCB 	"La entrada contiene caracteres invalidos, vuelva a ingresar posicion: ",EOT
+GAMEOVER 	 FCB 	"GAME OVER, 100/100 ^.^"
+v1 			 FCB 	"     ",EOT
+v2 			 FCB 	"   # # # # # # # #",EOT
+v3 			 FCB 	"  # ",EOT
+Msg_i		 FCB	"i: ",EOT
+Msg_j		 FCB	"j: ",EOT
+Msg_aux 	 FCB	"aux: ",EOT
+******************************************************************
+;******************************************************************
+;*********************************************************************
+*****************************************************************
+* SECCION DE CODIGO
+        ORG     CODE
+Main   
+	JSR		Iniciacion
+do
+	JSR 	mostrar_mat
+
+	jsr 	generar_elemento
+
+	ldx 	#Megs1
+	jsr 	OUTSTRG
+	
+	ldaa 	elemento
+	adda 	#'0'
+	jsr 	OUTA
+
+	ldx 	#Megs2
+	jsr 	OUTSTRG
+	
+	
+;while (entrada incorrecta)
+while_validar_entrada
+	des
+	jsr entrada ; VAAAALIIIDAAAACIOOOON DEEEE SOOOOLOOOO NUUUUMEEEROOOOOSS******** <-----------------------
+	pula				 
+	cmpa #TRUE
+	beq validar_rango
+	ldx #MegInvalida
+	jsr OUTSTRG
+	jmp continue_while
+;**********************************************************************************
+;VALIDACION DE RANGO EN C++
+;if (d1 > '6' || d1 <= '0' || d2 > '6' || d2 <= '0')
+;***************************************************************
+validar_rango
+
+	ldaa d1
+	suba #'0'
+	cmpa #N
+	bhi  fuera_de_rango
+	cmpa #0
+	beq fuera_de_rango
+	
+	ldaa d2
+	suba #'0'
+	cmpa #N
+	bhi  fuera_de_rango
+	cmpa #0
+	beq fuera_de_rango
+	
+	jmp validar_pos_ocupada
+;*******************************************************************
+;
+;;if (d1 > '6' || d1 <= '0' || d2 > '6' || d2 <= '0')
+;			{if (d1 > '6' || d1 <= '0' || d2 > '6' || d2 <= '0')
+;				cout << "Posicion fuera de rango, Vuelfa a internarlo: ";
+;				continue;
+	
+fuera_de_rango
+	ldx #MegsPsFuRngo
+	jsr OUTSTRG
+	jmp continue_while		;continue
+	
+validar_pos_ocupada
+	ldy #mat
+	ldab pos
+	aby 	
+	ldaa 0,Y
+	cmpa #0
+	beq fin_while_validar
+	ldx #MegsOCUPADO
+	jsr OUTSTRG
+	jmp continue_while
+
+continue_while	
+	jmp 	while_validar_entrada
+fin_while_validar
+	
+	;/ colocar_elemento
+	jsr 	colocar_elemento
+	
+	jsr fin_de_juego
+	
+	ldaa fin
+	cmpa #FALSE
+	beq no_fin
+	jmp End_dowhile
+no_fin
+	jmp 	do
+End_dowhile
+	
+	ldx #GAMEOVER
+	jsr OUTSTRG
+	
+	swi             	
+***-------------------------------------------------------------*****
+
+; Contar las casillas vacias,
+; si no existen casillas vacias, Fin de juego
+fin_de_juego
+	psha
+	pshb
+	pshx
+	pshy
+	des
+	des
+	tsx
+	;/
+	ldy #mat
+	clr 1,X 	; cont = 0
+	clr 0,X		; i = 0
+for_fin_juego
+	ldaa 0,X 
+	cmpa #36
+	bge fin_for_fin_juego
+	;/
+	
+	ldaa 0,Y
+	cmpa #0
+	bne fin_contar 
+	inc 1,X 	; cont++
+fin_contar
+	;/
+	iny
+	inc 0,X
+	jmp for_fin_juego
+fin_for_fin_juego
+	;/
+	
+	ldaa 1,X 	; A = cont
+	cmpa #0 
+	bne L1
+	ldaa #TRUE
+	staa fin
+L1	
+	ins
+	ins
+	puly
+	pulx
+	pulb
+	pula
+	rts
+
+DFS ; NO HICE TRANSPARENCIA PORQUE LA PILA SE LLENABA MUY RAPIDO
+	tsx
+	inc cont
+	ldab 2,X ; pos
+	ldy #visto
+	aby
+	ldaa #TRUE
+	staa 0,Y 	; visto[pos] = true
+	
+	;/ visitar a todos los vecinos
+	;/ arriba
+	ldab 2,X			; B = pos
+	subb #N 			; B = pos - N
+	cmpb #0
+	blo fin_arriba
+	ldy #visto			;Y = visto
+	aby  				;Y = visto + pos - N
+	ldaa 0,Y 			; A = visto[pos - N]
+	cmpa #TRUE
+	beq fin_arriba
+	ldy #mat			;Y = mat
+	aby 				;Y = mat + pos - N
+	ldaa 0,Y   			;A = mat[pos - N]
+	ldab 2,X 			;B = pos
+	ldy #mat
+	aby 				;Y = mat[pos]
+	cmpa 0,Y 			;(mat[pos - N] == mat[pos]) ?
+	bne fin_arriba 		; !=
+	ldaa 2,X
+	suba #N				; pos = pos - N
+	psha 	
+	jsr DFS
+	ins
+	tsx
+fin_arriba
+	
+	;/ abajo
+	ldab 2,X			; B = pos
+	addb #N 			; B = pos + N
+	cmpb #36
+	bge fin_abajo
+	ldy #visto			;Y = visto
+	aby  				;Y = visto + pos + N
+	ldaa 0,Y 			; A = visto[pos + N]
+	cmpa #TRUE
+	beq fin_abajo
+	ldy #mat			;Y = mat
+	aby 				;Y = mat + pos + N
+	ldaa 0,Y   			;A = mat[pos + N]
+	ldab 2,X 			;B = pos
+	ldy #mat
+	aby 				;Y = mat[pos]
+	cmpa 0,Y 			;(mat[pos + N] == mat[pos]) ?
+	bne fin_abajo 		; !=
+	ldaa 2,X
+	adda #N				; pos = pos + N
+	psha 
+	jsr DFS
+	ins
+	tsx
+fin_abajo
+	;/ derecha
+	clra
+	ldab 2,X			;D = pos
+	addd #1 			;D = pos + 1s
+	ldx #N
+	idiv			; IX = D / IX, D = D % IX 
+	; (pos + 1) % N
+	tsx
+	cmpb #0
+	beq fin_derecha
+	ldab 2,X			;B = pos
+	addb #1 			;B = pos + 1
+	ldy #visto			;Y = visto
+	aby  				;Y = visto + pos + 1
+	ldaa 0,Y 			; A = visto[pos + 1]
+	cmpa #TRUE
+	beq fin_derecha
+	ldy #mat			;Y = mat
+	aby 				;Y = mat + pos + 1
+	ldaa 0,Y   			;A = mat[pos + 1]
+	ldab 2,X 			;B = pos
+	ldy #mat
+	aby 				;Y = mat[pos]
+	cmpa 0,Y 			;(mat[pos + 1] == mat[pos]) ?
+	bne fin_derecha 		; !=
+	ldaa 2,X
+	adda #1				; pos = pos + 1
+	psha 
+	jsr DFS
+	ins
+	tsx
+fin_derecha
+	;/ izquierda
+	clra
+	ldab 2,X			;D = pos
+	ldx #N
+	idiv			; IX = D / IX, D = D % IX 
+	; pos % N
+	tsx
+	cmpb #0
+	beq fin_izquierda
+	ldab 2,X			;B = pos
+	subb #1 			;B = pos - 1
+	ldy #visto			;Y = visto
+	aby  				;Y = visto + pos - 1
+	ldaa 0,Y 			; A = visto[pos - 1]
+	cmpa #TRUE
+	beq fin_izquierda
+	ldy #mat			;Y = mat
+	aby 				;Y = mat + pos - 1
+	ldaa 0,Y   			;A = mat[pos - 1]
+	ldab 2,X 			;B = pos
+	ldy #mat
+	aby 				;Y = mat[pos]
+	cmpa 0,Y 			;(mat[pos - 1] == mat[pos]) ?
+	bne fin_izquierda 		; !=
+	ldaa 2,X
+	suba #1				; pos = pos - 1
+	psha 
+	jsr DFS
+	ins
+	tsx
+fin_izquierda	
+	
+	
+	rts
+;la PILA >
+;RET  6 - 0
+;RET  7 - 1
+;pos  8 - 2
+*------------------------------------------------------------------------------------*	
+	
+;*int ci = pos / 10 - 1; // Primer digito
+;*int cj = pos % 10 - 1; // Segundo digito
+
+;*cont = 0;
+;*mat[ci][cj] = elemento; // verificar elemento primero.
+
+;*memset(visto, false, sizeof(visto));
+;*DFS(ci, cj);(exploracion de la matriz, es la llamada a la funcion)
+	
+colocar_elemento
+	psha 
+	pshb 
+	pshx 
+	pshy 
+	tsx 
+	
+	clr cont
+	;/
+	ldab pos
+	ldy #mat
+	aby 	
+	ldaa elemento
+	staa 0,Y
+	;/
+	jsr limpiar_visto
+	
+	; llamar a DFS
+	ldaa pos
+	psha 
+	jsr DFS
+	ins
+	;fin llamada DFS
+	;/ mostrar visitados
+	;jsr mostrar_visto
+	;/
+	
+	ldaa cont
+	cmpa #3
+	blo fin_if_cont
+	jsr limpiar_grupo
+	inc elemento
+	jsr colocar_elemento
+fin_if_cont	
+	;/
+	puly
+	pulx
+	pulb
+	pula
+	rts
+;//LA PILA///
+;RY>  0
+;RY> 1
+;RX>  2
+;RX> 3
+;RB>  4
+;RA> 5
+;RET>  6
+;RET> 7
+
+limpiar_grupo ;;(cuando se forme un nuevo elemento se vacia la matriz de nuevo)
+	psha
+	pshb
+	pshx
+	pshy
+	des			; i
+	tsx
+	;/
+	clr 0,X 	; i = 0
+limpiar_g_for
+	ldab 0,X 
+	cmpb #36
+	bge fin_limpiar_g_for
+	ldy #visto
+	aby
+	ldaa 0,Y
+	cmpa #FALSE
+	beq fin_else_limp_g
+	ldy #mat
+	aby
+	clr 0,Y
+	
+fin_else_limp_g
+	
+	inc 0,X 
+	jmp limpiar_g_for
+fin_limpiar_g_for
+	;/
+	ins
+	puly
+	pulx
+	pulb
+	pula
+	rts	
+;LA PILA
+;	  i  0
+;    RY  1
+;    RY  2
+;    RX  3
+;    RX  4
+;    RB  5
+;    RA  6
+;    RET  7
+;    RET 8
+;    valid 9
+
+entrada
+	psha
+	pshb
+	pshx
+	pshy
+	tsx
+	
+	ldaa 	#TRUE
+	staa 	8,X 	 ; return true;
+	
+	;// primer digito
+	jsr 	INCHAR
+	staa 	d1
+	; ('0' <= d1 <= '9') ?
+	cmpa	#'0'
+	blo 	entrada_invalida1		; <
+	cmpa    #'9'
+	bhi		entrada_invalida1       ; >
+	jmp 	Seg_digit
+; Entrada invalida
+entrada_invalida1
+	ldaa 	#FALSE
+	staa 	8,X 		; return false;
+	
+Seg_digit
+	jsr 	INCHAR
+	staa 	d2
+	; ('0' <= d1 <= '9') ?
+	cmpa	#'0'
+	blo 	entrada_invalida2		; <
+	cmpa 	#'9'
+	bhi 	entrada_invalida2		; >
+	jmp		fin_entrada
+	; Entrada invalida
+entrada_invalida2
+	ldaa 	#FALSE
+	staa 	8,X 		; return false;
+	
+fin_entrada
+
+; Convertir de coordenada [i,j] a pos [0;(N*N)-1]
+	ldaa 	#N
+	ldab 	d1
+	subb 	#'1'
+	mul
+	addb 	d2
+	subb 	#'1'
+	stab 	pos	
+	; POS = d1*n + D2
+	
+	puly
+	pulx
+	pulb
+	pula
+	rts
+;lA PILA 
+;RY  0
+;RY  1
+;RX  2
+;RX  3
+;RB  4
+;RA  5
+;RET  6
+;RET 7
+;valid 8
+	
+generar_elemento
+	
+	jsr rand ; numero nuevo generado para la matriz
+	
+	ldaa r
+	cmpa #150 		;58.8%
+	bls return_1	
+	
+	cmpa #230  		;31%
+	bls return_2
+	
+	cmpa #240  		;4%
+	bls return_3
+	
+	cmpa #245       ;2%
+	bls return_4
+	
+	cmpa #250		;2%
+	bls return_5
+	jmp return_6	;2%
+	
+return_1
+	ldaa #1
+	staa elemento
+	jmp fin_generar_elemento
+return_2
+	ldaa #2
+	staa elemento
+	jmp fin_generar_elemento
+return_3
+	ldaa #3
+	staa elemento
+	jmp fin_generar_elemento
+return_4
+	ldaa #4
+	staa elemento
+	jmp fin_generar_elemento
+return_5
+	ldaa #5
+	staa elemento
+	jmp fin_generar_elemento
+return_6
+	ldaa #6
+	staa elemento
+	
+fin_generar_elemento
+	rts
+	
+Iniciacion
+	ldaa #FALSE
+	staa fin
+	
+	jsr limpiar_mat
+	jsr estado_inicial
+	rts
+
+estado_inicial
+	psha
+	pshb
+	pshx
+	pshy
+	des
+	tsx
+	;/
+	clr 0,X
+for_i_estado_ini
+	ldaa 0,X
+	cmpa #36
+	bge fin_for_i_estado_ini
+	
+	jsr generar_elemento
+	
+	ldaa elemento
+	cmpa #2					; 41.8%
+	blo fin_if_estado_ini 
+	ldaa 0,X
+	staa pos 
+	jsr generar_elemento ; generar un nuevo elemento
+	
+	jsr colocar_elemento
+	
+fin_if_estado_ini
+	inc 0,X
+	jmp for_i_estado_ini
+fin_for_i_estado_ini
+	;/
+	ins
+	puly
+	pulx
+	pulb
+	pula	
+	rts
+;//*< PILA >*///
+;iX->|__i_| 0
+;    |_RY_| 1
+;    |_RY_| 2
+;    |_RX_| 3
+;    |_RX_| 4
+;    |_RB_| 5
+;    |_RA_| 6
+;    |_RET| 7
+;    |_RET| 8
+
+mostrar_mat
+	ldx #mat
+	pshx
+	jsr mostrar
+	ins
+	ins
+	rts
+
+mostrar_visto
+	ldx #visto
+	pshx
+	jsr mostrar
+	ins
+	ins
+	rts
+	
+mostrar
+	psha			; A
+	pshb			; B
+	pshx			; X
+	pshy			; Y
+	des 			; i
+	des 			; j
+	
+	jsr 	OUTCRLF
+	jsr 	OUTCRLF
+	ldx 	#v1
+	jsr		OUTSTRG0
+	tsx
+	
+	; cabecera
+	clr 	0,X			;i = 0		
+for_i1_mostrar	
+	ldaa    0,X    		;A = i
+	cmpa    #N    		;i - N
+	bge     end_for_i1_mostrar ;>= 0 ?		
+	
+	ldaa 	0,X
+	adda 	#'1'
+	jsr 	OUTA
+	ldaa 	#' '
+	jsr 	OUTA
+
+	inc 	0,X			;i++
+	jmp     for_i1_mostrar
+end_for_i1_mostrar
+	; fin cabecera
+	
+	ldx 	#v2
+	jsr		OUTSTRG
+	jsr 	OUTCRLF
+	tsx
+	clr 	0,X			;i = 0		
+	ldy 	10,X 		; Y = mat
+for_i_mostrar	
+	ldaa    0,X    		;A = i
+	cmpa    #N    		;i - N
+	bge     end_for_i_mostrar ;>= 0 ?		
+	
+	adda 	#'1'
+	jsr 	OUTA
+	ldx 	#v3
+	jsr 	OUTSTRG0
+	tsx	
+	
+	clr 	1,X			;j = 0
+for_j_mostrar
+	ldaa    1,X    		;A = j
+	cmpa    #N    		;j - N
+	bge     end_for_j_mostrar ;>= 0 ? 
+	
+	ldaa 	0,Y
+	cmpa 	#0
+	beq 	if_mostrar
+	jmp 	else_if_mostrar
+if_mostrar
+	ldaa 	#'-'
+	jsr 	OUTA
+	jmp 	fin_if_mostrar
+else_if_mostrar
+	adda 	#'0'
+	jsr 	OUTA
+fin_if_mostrar
+	ldaa 	#' '
+	jsr 	OUTA
+	iny 			;Y apunta al siguiente elemento de mat[][]
+	
+	; ;//
+	tsx
+	inc 	1,X			;j++
+	jmp     for_j_mostrar
+end_for_j_mostrar
+	
+	tsx
+	ldaa 	#'#'
+	jsr 	OUTA
+	jsr 	OUTCRLF
+	
+	inc 	0,X			;i++
+	jmp     for_i_mostrar
+end_for_i_mostrar
+
+	ldx #v2
+	jsr	OUTSTRG0
+	jsr OUTCRLF
+	tsx
+*end loop for
+	ins 			;Dealocate  DESEMPILAR 
+	ins 			;Dealocate i
+	puly			;Dealocate Y
+	pulx			;Dealocate X
+	pulb			;Dealocate B
+	pula			;Dealocate A
+	rts		
+;//*< PILA >*///
+;iX->|__i_| 0
+;    |__j_| 1
+;    |_RY_| 2
+;    |_RY_| 3
+;    |_RX_| 4
+;    |_RX_| 5
+;    |_RB_| 6
+;    |_RA_| 7
+;    |_RET| 8
+;    |_RET| 9
+; 	 |_mat| 10
+; 	 |_mat| 11
+
+
+limpiar_mat
+	ldx		#mat
+	pshx				;Empilar mat
+	jsr		limpiar
+	ins					;chau mat
+	ins					;chau mat
+	rts
+	
+limpiar_visto
+	ldx		#visto
+	pshx				;Empilar mat
+	jsr		limpiar
+	ins					;chau mat
+	ins					;chau mat
+	rts
+
+limpiar		
+	psha			; A
+	pshb			; B
+	pshx			; X
+	pshy			; Y
+	des 			; i
+	des 			; j
+	tsx
+	
+	clr 	0,X			;i = 0		
+	ldy 	10,X
+for_i_limpiar	
+	ldaa    0,X    		;A = i
+	cmpa    #N    		;i - N
+	bge     end_for_i_limpiar ;>= 0 ?		
+	clr 	1,X			;j = 0
+for_j_limpiar	
+	ldaa    1,X    		;A = j
+	cmpa    #N    		;j - N
+	bge     end_for_j_limpiar ;>= 0 ? 
+	
+	clr 	0,Y 	;mat[i][j] = 0
+	iny 			;Y apunta al siguiente elemento de mat[][]
+	
+	;//
+	tsx
+	inc 	1,X			;j++
+	jmp     for_j_limpiar
+end_for_j_limpiar
+	tsx
+	inc 	0,X			;i++
+	jmp     for_i_limpiar
+end_for_i_limpiar
+	ins 			;Dealocate i
+	ins 			;Dealocate j
+	puly			;Dealocate Y
+	pulx			;Dealocate X
+	pulb			;Dealocate B
+	pula			;Dealocate A
+	rts		
+;****la *****PILA
+;i> 0
+;j >1
+;RY >2
+;RY >3
+;RX >4
+;RX >5
+;RB >6
+;RA >7
+;RET >8
+;RET >9
+;*m >10
+;*m >11
+
+
+; funcion raammmmdooommmmm******************************************
+rand	
+	psha
+	pshb
+	pshx
+
+	ldaa s1+1
+	ldab #67
+	mul
+	stab s1+1
+	psha
+	ldaa s1
+	ldab #67
+	mul
+	pula
+	aba
+	staa s1
+	ldd #859
+	xgdx
+	ldd s1
+	idiv
+	std s1
+
+	ldaa s2+1
+	ldab #71
+	mul
+	stab s2+1
+	psha
+	ldaa s2
+	ldab #71
+	mul
+	pula
+	aba
+	staa s2
+	ldd #863
+	xgdx
+	ldd s2
+	idiv
+	std s2
+
+	ldaa s3+1
+	ldab #73
+	mul
+	stab s3+1
+	psha
+	ldaa s3
+	ldab #73
+	mul
+	pula
+	aba
+	staa s3
+	ldd #877
+	xgdx
+	ldd s3
+	idiv
+	std s3
+
+	ldd #859
+	xgdx
+	ldd s1
+	fdiv
+	xgdx
+	std r
+
+	ldd #863
+	xgdx
+	ldd s2
+	fdiv
+	xgdx
+	addd r
+	std r
+
+	ldd #877
+	xgdx
+	ldd s3
+	fdiv
+	xgdx
+	addd r
+	std r
+
+	pulx
+	pulb
+	pula
+	rts	
+
+******************************************************************
+*FIN 100/100
+        END
