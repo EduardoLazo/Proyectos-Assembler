@@ -1,0 +1,422 @@
+****************************VELOZ-MENTE************************************
+***************************************************************************
+* definiciones de caracteres ASCII (LAS DEFINICIONES DE CARACTERES)
+EOT			EQU		$04		;FINAL DEL TEXTO
+CR      	EQU     $0d     ;ASCII RETORNO
+ESC			EQU		$1B		;ESCape
+
+* rutinas de BUFFALO
+OUTA    	EQU     $FFB8   ;BUFFALO RETORNO to output acc A
+OUTCRLF		EQU		$FFC4	;output CR-LF (carriage return and line feed)
+OUTSTRG		EQU		$FFC7	;CADENA output RETORNO.
+INCHAR		EQU		$FFCD	;char input RETORNO.
+OUTSTRG0	EQU		$FFCA	;ditto w/o leading CR
+
+* Constantes de direcciones de programa
+VARS		EQU	$100; donde se localizan las variables
+CODE		EQU	$2000; donde se localiza el codigo
+
+* las variables que van a ser locales
+	ORG	VARS
+	
+i 	fcb 0
+	
+* PARA CARGAR ELEMENTOS ALEATORIOS 
+s1	fdb 2
+s2	fdb 5
+s3	fdb 7
+r	fdb 0
+nro fcb	0
+anterior	fcb		1			;numero de figura anterior
+nuevo 		fcb 	1 			;numero de figura nueva
+puntuacion 	fcb 	0 			;Puntuacion del juego
+aux			fcb		0			;auxiliar para imprimir numero
+
+******************************************************************
+* Mensajes de salida
+
+BordeSupInf	 FCB 	"# # # # # # # # # # # # # # # # # # # # # # # # #",EOT
+Lateral1	 FCB 	"#                                               #",EOT
+Punta		 FCB 	"#                      *                        #",EOT
+LatTrian2	 FCB 	"#                     * *                       #",EOT
+LatTrian3	 FCB 	"#                    *   *                      #",EOT
+LatTrian4	 FCB 	"#                   *     *                     #",EOT
+base		 FCB 	"#                  * * * * *                    #",EOT
+LatCuad		 FCB 	"#                  *       *                    #",EOT
+baseRect	 FCB 	"#                * * * * * * *                  #",EOT
+LatRect		 FCB 	"#                *           *                  #",EOT
+PregunJuego  FCB 	"La figura anterior es similar a la actual a=no // d=si",EOT
+PregunInicio FCB 	"Presione q para empezar",EOT
+PuntuacionFi FCB	"Su puntuacion final es: ",EOT
+******************************************************************
+;******************************************************************
+
+* SECCION DE CODIGO
+        ORG     CODE
+Main:
+	JSR rand
+	ldd #4
+	xgdx
+	ldd r
+	idiv
+	stab nro
+	pshb
+	jsr switch
+	ins
+		
+pregunta: 
+	ldx #PregunInicio
+	jsr OUTSTRG
+	jsr INCHAR
+	cmpa #'q'
+	beq juegoPrinc	;si inchar=q 
+	bra pregunta
+	
+juegoPrinc:
+	ldd nro			; cargo nro, que tiene el valor aleatorio
+	std anterior	; anterior=nro
+	ldaa #1			; A=1
+	staa i			; i=1
+for:
+	ldaa i			; cargo en A la variable i
+	suba #20		; i-20
+	bgt puntaje		; salta al label de puntaje
+	JSR rand		; genero un numero aleatorio en r
+	ldd #4			; 
+	xgdx
+	ldd r
+	idiv			; r%3
+	stab nuevo		; se guarda el valor aleatorio en nuevo
+	pshb			; guardo el valor de b en la pila
+	jsr switch		; genera una nueva figura
+	ins
+	
+ValidPregunt: 
+	ldx #PregunJuego
+	jsr OUTSTRG
+	jsr INCHAR
+	cmpa #'a'
+	beq ContijuegoPrinc	;si inchar=a 
+	cmpa #'d'
+	beq ContijuegoPrinc	;si inchar=d
+	bra ValidPregunt
+	
+;if((Anterior==nuevo) && (resultado=='d'))
+;			{puntuacion=puntuacion+10;}
+
+ContijuegoPrinc:
+	ldab anterior		; cargo anterior en el registro b
+	cmpb nuevo			; comparado anterior con el valor de nuevo
+	bne sgteIF			; si no es igual salta a la etiqueta sgteIF
+	cmpa #'d'			; comparo la letra d con el valor del registro a
+	bne	sgteIF			; si no es igual salta a la etiqueta sgteIF
+	ldab puntuacion		; cargo puntuacion en b
+	addb #5				; puntuacion + 5
+	stab puntuacion		; guardo lo del registro b en puntuacion
+	bra finfor			; salto a finfor
+
+;if((Anterior!=nuevo) && (resultado=='a'))
+;			{puntuacion=puntuacion+10;}
+	
+sgteIF:
+	ldab anterior		; cargo anterior en el registro b
+	cmpb nuevo			; comparado anterior con el valor de nuevo
+	beq finfor			; si no es igual salta a la etiqueta finfor
+	cmpa #'a'			; comparo la letra a con el valor del registro a
+	bne	finfor			; si no es igual salta a la etiqueta sgteIF
+	ldab puntuacion		; cargo puntuacion en b
+	addb #5				; puntuacion + 5
+	stab puntuacion		; guardo lo del registro b en puntuacion
+
+finfor:
+	ldaa nuevo
+	staa anterior		;anterior=nuevo
+	ldaa i
+	inca				;i++
+	staa i
+	bra for
+	
+puntaje:
+	ldx 	#PuntuacionFi
+	jsr 	OUTSTRG
+	ldaa	puntuacion
+	psha				;Stack Rule
+	jsr		Show_number
+	ins					;Dealocate Rule
+	
+fin:
+	clr puntuacion
+	swi
+	
+
+
+Show_number			
+		psha			
+		pshb			
+		pshx			
+		pshy			
+		tsx	
+
+;//*< PILA >*///
+;iX->|_RY_| 0
+;    |_RY_| 1
+;    |_RX_| 2
+;    |_RX_| 3
+;    |_RB_| 4
+;    |_RA_| 5
+;    |_RET| 6
+;    |_RET| 7
+;    |__n_| 8		
+		
+		clra 			; A = 0
+		ldab	8,X		; B = Rule
+		ldx 	#100	; IX = 100
+		idiv			; D/IX -> iX; r -> B
+		xgdx			; swap D, IX
+		tba				; B -> A
+		adda	#'0'	; A += '0'
+		jsr 	OUTA	; first digit
+		suba 	#'0'	; 
+		ldab 	#100	; B = 100
+		mul 			; B = A * B
+		stab 	aux 	; aux = F00
+		
+		tsx
+		clra 			; A = 0
+		ldab	8,X		; B = Rule
+		subb 	aux 	; B = Rule - aux
+		ldx 	#10		; IX = 10
+		idiv			; D/IX -> iX; r -> B
+		xgdx			; swap D, IX
+		tba				; B -> A
+		adda	#'0'	; A += '0'
+		jsr 	OUTA	; Second digit
+		suba 	#'0'	;
+		ldab 	#10		; B = 10
+		mul 			; B = A * B = 0S0
+		addb 	aux		; B = FS0
+		stab 	aux 	; aux = FS0
+		
+		tsx
+		ldaa	8,x		; A = Rule
+		suba 	aux 	; A = Rule - FS0
+		adda	#'0'	; A += '0'
+		jsr 	OUTA	; Third digit		
+		
+		puly			;Dealocate Y
+		pulx			;Dealocate X
+		pulb			;Dealocate B
+		pula			;Dealocate A
+		rts
+
+
+;********** swtich de figuras ******************
+
+switch:
+	psha
+	pshb
+	pshx
+	
+;//*< PILA >*///
+;iX->|_RX_| 0
+;    |_RX_| 1
+;    |_RB_| 2
+;    |_RA_| 3
+;    |_RET| 4
+;    |_RET| 5
+; 	 |_val| 6
+
+	jsr 	OUTCRLF
+	jsr 	OUTCRLF
+	jsr 	OUTCRLF
+	jsr 	OUTCRLF
+	jsr 	OUTCRLF
+	jsr 	OUTCRLF
+	jsr 	OUTCRLF
+	jsr 	OUTCRLF
+	jsr 	OUTCRLF
+	jsr 	OUTCRLF
+	jsr 	OUTCRLF
+	jsr 	OUTCRLF
+	jsr 	OUTCRLF
+	jsr 	OUTCRLF
+	jsr 	OUTCRLF
+	jsr 	OUTCRLF
+	jsr 	OUTCRLF
+	jsr 	OUTCRLF
+	ldx		#BordeSupInf
+	jsr		OUTSTRG
+	ldx		#Lateral1
+	jsr		OUTSTRG
+	ldx		#Lateral1
+	jsr		OUTSTRG
+	tsx
+	ldaa	6,x
+	cmpa 	#0
+	beq 	case0
+	cmpa 	#1
+	beq 	case1
+	cmpa 	#2
+	beq 	case2
+	cmpa 	#3
+	beq 	case3
+	jmp 	fin_switch
+	
+case0:	;FIGURA TRIANGULO
+	
+	ldx		#Punta
+	jsr		OUTSTRG
+	ldx		#LatTrian2
+	jsr		OUTSTRG
+	ldx		#LatTrian3
+	jsr		OUTSTRG
+	ldx		#LatTrian4
+	jsr		OUTSTRG
+	ldx		#base
+	jsr		OUTSTRG
+	jmp fin_switch
+	
+case1: ;FIGURA RECTANGULO
+	ldx		#baseRect
+	jsr		OUTSTRG
+	ldx		#LatRect
+	jsr		OUTSTRG
+	ldx		#LatRect
+	jsr		OUTSTRG
+	ldx		#LatRect
+	jsr		OUTSTRG
+	ldx		#baseRect
+	jsr		OUTSTRG
+	jmp 	fin_switch
+
+case2: ;FIGURA CUADRADO
+	ldx		#base
+	jsr		OUTSTRG
+	ldx		#LatCuad
+	jsr		OUTSTRG
+	ldx		#LatCuad
+	jsr		OUTSTRG
+	ldx		#LatCuad
+	jsr		OUTSTRG
+	ldx		#base
+	jsr		OUTSTRG
+	jmp 	fin_switch
+	
+case3:	;FIGURA PENTAGONO
+	ldx		#Punta
+	jsr		OUTSTRG
+	ldx		#LatTrian2
+	jsr		OUTSTRG
+	ldx		#LatTrian3
+	jsr		OUTSTRG
+	ldx		#LatTrian4
+	jsr		OUTSTRG
+	ldx		#LatCuad
+	jsr		OUTSTRG
+	ldx		#LatCuad
+	jsr		OUTSTRG
+	ldx		#base
+	jsr		OUTSTRG
+	jmp 	fin_switch
+	
+fin_switch:
+	ldx		#Lateral1
+	jsr		OUTSTRG
+	ldx		#Lateral1
+	jsr		OUTSTRG
+	ldx		#BordeSupInf
+	jsr		OUTSTRG
+	
+	pulx
+	pulb
+	pula
+	rts
+		
+	
+;***************Función Random*******************
+
+rand:	
+	psha
+	pshb
+	pshx
+
+	ldaa s1+1
+	ldab #67
+	mul
+	stab s1+1
+	psha
+	ldaa s1
+	ldab #67
+	mul
+	pula
+	aba
+	staa s1
+	ldd #859
+	xgdx
+	ldd s1
+	idiv
+	std s1
+
+	ldaa s2+1
+	ldab #71
+	mul
+	stab s2+1
+	psha
+	ldaa s2
+	ldab #71
+	mul
+	pula
+	aba
+	staa s2
+	ldd #863
+	xgdx
+	ldd s2
+	idiv
+	std s2
+
+	ldaa s3+1
+	ldab #73
+	mul
+	stab s3+1
+	psha
+	ldaa s3
+	ldab #73
+	mul
+	pula
+	aba
+	staa s3
+	ldd #877
+	xgdx
+	ldd s3
+	idiv
+	std s3
+
+	ldd #859
+	xgdx
+	ldd s1
+	fdiv
+	xgdx
+	std r
+
+	ldd #863
+	xgdx
+	ldd s2
+	fdiv
+	xgdx
+	addd r
+	std r
+
+	ldd #877
+	xgdx
+	ldd s3
+	fdiv
+	xgdx
+	addd r
+	std r
+
+	pulx
+	pulb
+	pula
+	rts
+;------------------------------------------------------
+	
